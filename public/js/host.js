@@ -267,8 +267,37 @@ function removeParticipant(userId) {
 }
 
 function addRemoteVideo(userId, stream) {
-    // For this implementation, we don't show remote videos, only participant cards
-    // The stream parameter is ignored as per requirements
+    // Remove the participant card and replace with actual video
+    const existingCard = document.getElementById(`participant-card-${userId}`);
+    if (existingCard) {
+        existingCard.remove();
+    }
+    
+    const remoteParticipants = document.getElementById('remoteParticipants');
+    
+    // Create video container
+    const videoContainer = document.createElement('div');
+    videoContainer.className = 'remote-video-container';
+    videoContainer.id = `video-container-${userId}`;
+    
+    // Create video element
+    const video = document.createElement('video');
+    video.id = `video-${userId}`;
+    video.autoplay = true;
+    video.playsinline = true;
+    video.muted = false; // Don't mute remote videos so host can hear participants
+    video.srcObject = stream;
+    
+    // Create video label
+    const label = document.createElement('div');
+    label.className = 'video-label';
+    // Get participant name from the participant list
+    const participantElement = document.getElementById(`participant-${userId}`);
+    label.textContent = participantElement ? participantElement.textContent : `Participant ${userId}`;
+    
+    videoContainer.appendChild(video);
+    videoContainer.appendChild(label);
+    remoteParticipants.appendChild(videoContainer);
 }
 
 function addRemoteParticipant(userId, userName) {
@@ -297,9 +326,16 @@ function addRemoteParticipant(userId, userName) {
 }
 
 function removeRemoteParticipant(userId) {
+    // Remove participant card if it exists
     const participantCard = document.getElementById(`participant-card-${userId}`);
     if (participantCard) {
         participantCard.remove();
+    }
+    
+    // Remove video container if it exists
+    const videoContainer = document.getElementById(`video-container-${userId}`);
+    if (videoContainer) {
+        videoContainer.remove();
     }
 }
 
