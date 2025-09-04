@@ -143,6 +143,9 @@ async function startMeeting() {
         document.querySelector('.meeting-setup').style.display = 'none';
         document.getElementById('meetingRoom').style.display = 'block';
         
+        // Add video click listeners for expansion functionality
+        addVideoClickListeners();
+        
     } catch (error) {
         console.error('Error starting meeting:', error);
         alert('Failed to start meeting. Please try again.');
@@ -571,5 +574,62 @@ function endMeeting() {
         Object.values(peerConnections).forEach(pc => pc.close());
         
         goHome();
+    }
+}
+
+// Video expansion functionality
+function expandVideo(videoElement) {
+    const modal = document.getElementById('videoModal');
+    const modalVideo = document.getElementById('modalVideo');
+    
+    if (videoElement && videoElement.srcObject) {
+        modalVideo.srcObject = videoElement.srcObject;
+        modal.classList.add('active');
+        
+        // Add ESC key listener to close modal
+        document.addEventListener('keydown', handleEscapeKey);
+    }
+}
+
+function closeVideoModal() {
+    const modal = document.getElementById('videoModal');
+    const modalVideo = document.getElementById('modalVideo');
+    
+    modal.classList.remove('active');
+    modalVideo.srcObject = null;
+    
+    // Remove ESC key listener
+    document.removeEventListener('keydown', handleEscapeKey);
+}
+
+function handleEscapeKey(event) {
+    if (event.key === 'Escape') {
+        closeVideoModal();
+    }
+}
+
+// Add click event listeners when meeting starts
+function addVideoClickListeners() {
+    // Add click listener for local video
+    const localVideoContainer = document.querySelector('.local-video-container');
+    if (localVideoContainer) {
+        localVideoContainer.addEventListener('click', function() {
+            const localVideo = document.getElementById('localVideo');
+            expandVideo(localVideo);
+        });
+    }
+    
+    // Add click listeners for remote videos (will be added dynamically when participants join)
+    const remoteParticipants = document.getElementById('remoteParticipants');
+    if (remoteParticipants) {
+        remoteParticipants.addEventListener('click', function(event) {
+            const videoContainer = event.target.closest('.remote-video-container');
+            if (videoContainer) {
+                const video = videoContainer.querySelector('video');
+                if (video) {
+                    expandVideo(video);
+                }
+            }
+        });
     }
 }

@@ -79,6 +79,14 @@
         </div>
         
         <div id="errorMessage" class="error" style="display: none;"></div>
+        
+        <!-- Video Expansion Modal -->
+        <div id="videoModal" class="video-modal">
+            <div class="video-modal-content">
+                <button class="video-modal-close" onclick="closeVideoModal()">&times;</button>
+                <video id="modalVideo" autoplay muted playsinline></video>
+            </div>
+        </div>
     </div>
     
     <script src="/socket.io/socket.io.js"></script>
