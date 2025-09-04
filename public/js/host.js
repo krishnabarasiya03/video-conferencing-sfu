@@ -103,13 +103,37 @@ async function startMeeting() {
             canvas.height = 480;
             const ctx = canvas.getContext('2d');
             
-            // Draw a simple test pattern
-            ctx.fillStyle = '#4a90e2';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = 'white';
-            ctx.font = '24px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('Host Video (Test Mode)', canvas.width / 2, canvas.height / 2);
+            // Create animated canvas with changing content
+            let frame = 0;
+            function drawFrame() {
+                // Clear canvas
+                ctx.fillStyle = '#4a90e2';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw animated content
+                ctx.fillStyle = 'white';
+                ctx.font = '24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Host Video (Test Mode)', canvas.width / 2, canvas.height / 2 - 20);
+                
+                // Add a simple animation - bouncing circle
+                const time = Date.now() * 0.002;
+                const x = canvas.width / 2 + Math.sin(time) * 100;
+                const y = canvas.height / 2 + 40 + Math.sin(time * 1.5) * 20;
+                
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.beginPath();
+                ctx.arc(x, y, 20, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Add frame counter for visual confirmation
+                ctx.fillStyle = 'white';
+                ctx.font = '16px Arial';
+                ctx.fillText(`Frame: ${frame++}`, canvas.width / 2, canvas.height - 30);
+                
+                requestAnimationFrame(drawFrame);
+            }
+            drawFrame();
             
             // Create stream from canvas
             localStream = canvas.captureStream(30);

@@ -84,14 +84,40 @@ async function joinMeeting() {
             canvas.height = 480;
             const ctx = canvas.getContext('2d');
             
-            // Draw a simple test pattern
-            ctx.fillStyle = '#e74c3c';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = 'white';
-            ctx.font = '24px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('Participant Video (Test Mode)', canvas.width / 2, canvas.height / 2);
-            ctx.fillText(nameInput, canvas.width / 2, canvas.height / 2 + 40);
+            // Create animated canvas with changing content
+            let frame = 0;
+            function drawFrame() {
+                // Clear canvas
+                ctx.fillStyle = '#e74c3c';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw animated content
+                ctx.fillStyle = 'white';
+                ctx.font = '24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Participant Video (Test Mode)', canvas.width / 2, canvas.height / 2 - 40);
+                ctx.fillText(nameInput, canvas.width / 2, canvas.height / 2 - 10);
+                
+                // Add a simple animation - rotating square
+                const time = Date.now() * 0.003;
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2 + 40;
+                
+                ctx.save();
+                ctx.translate(centerX, centerY);
+                ctx.rotate(time);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.fillRect(-15, -15, 30, 30);
+                ctx.restore();
+                
+                // Add frame counter for visual confirmation
+                ctx.fillStyle = 'white';
+                ctx.font = '16px Arial';
+                ctx.fillText(`Frame: ${frame++}`, canvas.width / 2, canvas.height - 30);
+                
+                requestAnimationFrame(drawFrame);
+            }
+            drawFrame();
             
             // Create stream from canvas
             localStream = canvas.captureStream(30);
