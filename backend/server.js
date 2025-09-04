@@ -162,6 +162,18 @@ io.on('connection', (socket) => {
         });
     });
     
+    socket.on('chat-message', (data) => {
+        console.log('Chat message from:', socket.userName, 'Message:', data.message);
+        
+        // Broadcast message to all other participants in the meeting
+        socket.to(data.meetingCode).emit('chat-message', {
+            message: data.message,
+            senderName: socket.userName,
+            senderId: socket.id,
+            timestamp: new Date().toISOString()
+        });
+    });
+    
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         

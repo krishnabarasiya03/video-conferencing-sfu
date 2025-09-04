@@ -6,10 +6,22 @@ let meetingCode;
 let meetingId;
 let isMicMuted = false;
 let isCameraOff = false;
+let isScreenSharing = false;
+let screenStream = null;
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
     createMeeting();
+    
+    // Add Enter key listener for chat input
+    const chatInput = document.getElementById('chatInput');
+    if (chatInput) {
+        chatInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    }
 });
 
 function goHome() {
@@ -151,6 +163,11 @@ function setupSocketListeners() {
         console.error('Socket error:', data);
         alert('Error: ' + data.message);
     });
+    
+    socket.on('chat-message', (data) => {
+        console.log('Received chat message:', data);
+        addChatMessage(data.senderName, data.message, false);
+    });
 }
 
 function createPeerConnection(userId) {
@@ -234,6 +251,9 @@ function addParticipant(userId, userName) {
     participantDiv.id = `participant-${userId}`;
     participantDiv.textContent = userName;
     participantsList.appendChild(participantDiv);
+    
+    // Also add to remote participants display
+    addRemoteParticipant(userId, userName);
 }
 
 function removeParticipant(userId) {
@@ -242,32 +262,160 @@ function removeParticipant(userId) {
         participantElement.remove();
     }
     
-    // Remove remote video
-    const videoElement = document.getElementById(`video-${userId}`);
-    if (videoElement) {
-        videoElement.parentElement.remove();
-    }
+    // Remove from remote participants display
+    removeRemoteParticipant(userId);
 }
 
 function addRemoteVideo(userId, stream) {
-    const remoteVideos = document.getElementById('remoteVideos');
+    // For this implementation, we don't show remote videos, only participant cards
+    // The stream parameter is ignored as per requirements
+}
+
+function addRemoteParticipant(userId, userName) {
+    // Check if participant card already exists
+    if (document.getElementById(`participant-card-${userId}`)) {
+        return;
+    }
     
-    const videoContainer = document.createElement('div');
-    videoContainer.className = 'remote-video-container';
+    const remoteParticipants = document.getElementById('remoteParticipants');
     
-    const video = document.createElement('video');
-    video.id = `video-${userId}`;
-    video.srcObject = stream;
-    video.autoplay = true;
-    video.playsinline = true;
+    const participantCard = document.createElement('div');
+    participantCard.className = 'participant-card';
+    participantCard.id = `participant-card-${userId}`;
     
-    const label = document.createElement('div');
-    label.className = 'video-label';
-    label.textContent = `User-${userId.substring(0, 6)}`;
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.textContent = userName.charAt(0).toUpperCase();
     
-    videoContainer.appendChild(video);
-    videoContainer.appendChild(label);
-    remoteVideos.appendChild(videoContainer);
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = userName;
+    
+    participantCard.appendChild(avatar);
+    participantCard.appendChild(name);
+    remoteParticipants.appendChild(participantCard);
+}
+
+function removeRemoteParticipant(userId) {
+    const participantCard = document.getElementById(`participant-card-${userId}`);
+    if (participantCard) {
+        participantCard.remove();
+    }
+}
+
+function sendMessage() {
+    const chatInput = document.getElementById('chatInput');
+    const message = chatInput.value.trim();
+    
+    if (message && socket) {
+        socket.emit('chat-message', {
+            message: message,
+            meetingCode: meetingCode
+        });
+        
+        // Add message to own chat
+        addChatMessage('You (Host)', message, true);
+        chatInput.value = '';
+    }
+}
+
+function addChatMessage(sender, message, isOwn = false) {
+    const chatMessages = document.getElementById('chatMessages');
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chat-message ${isOwn ? 'own' : 'other'}`;
+    
+    const senderDiv = document.createElement('div');
+    senderDiv.className = 'sender';
+    senderDiv.textContent = sender;
+    
+    const textDiv = document.createElement('div');
+    textDiv.className = 'text';
+    textDiv.textContent = message;
+    
+    messageDiv.appendChild(senderDiv);
+    messageDiv.appendChild(textDiv);
+    chatMessages.appendChild(messageDiv);
+    
+    // Scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+async function toggleScreenShare() {
+    const screenShareBtn = document.getElementById('screenShareBtn');
+    
+    if (!isScreenSharing) {
+        try {
+            screenStream = await navigator.mediaDevices.getDisplayMedia({
+                video: true,
+                audio: true
+            });
+            
+            // Replace video track in local stream
+            const videoTrack = screenStream.getVideoTracks()[0];
+            const sender = peerConnections[Object.keys(peerConnections)[0]]?.getSenders()
+                .find(s => s.track && s.track.kind === 'video');
+            
+            if (sender) {
+                await sender.replaceTrack(videoTrack);
+            }
+            
+            // Update local video
+            const localVideo = document.getElementById('localVideo');
+            localVideo.srcObject = screenStream;
+            
+            isScreenSharing = true;
+            screenShareBtn.textContent = '⏹️';
+            screenShareBtn.classList.add('active');
+            
+            // Listen for screen share end
+            videoTrack.onended = () => {
+                stopScreenShare();
+            };
+            
+        } catch (error) {
+            console.error('Error starting screen share:', error);
+            alert('Failed to start screen sharing');
+        }
+    } else {
+        stopScreenShare();
+    }
+}
+
+async function stopScreenShare() {
+    if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+    }
+    
+    // Restore camera
+    try {
+        const cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true
+        });
+        
+        const videoTrack = cameraStream.getVideoTracks()[0];
+        const sender = peerConnections[Object.keys(peerConnections)[0]]?.getSenders()
+            .find(s => s.track && s.track.kind === 'video');
+        
+        if (sender) {
+            await sender.replaceTrack(videoTrack);
+        }
+        
+        // Update local video
+        const localVideo = document.getElementById('localVideo');
+        localVideo.srcObject = cameraStream;
+        localStream = cameraStream;
+        
+    } catch (error) {
+        console.error('Error restoring camera:', error);
+    }
+    
+    isScreenSharing = false;
+    const screenShareBtn = document.getElementById('screenShareBtn');
+    screenShareBtn.textContent = '🖥️';
+    screenShareBtn.classList.remove('active');
 }
 
 function updateParticipantCount() {
