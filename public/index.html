@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Conferencing SFU</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Video Conferencing SFU</h1>
+            <p>Connect with others through secure video conferencing</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="option-cards">
+                <div class="card">
+                    <h2>Host a Meeting</h2>
+                    <p>Start a new video conference and get a meeting code to share</p>
+                    <button onclick="hostMeeting()" class="btn btn-primary">Host Meeting</button>
+                </div>
+                
+                <div class="card">
+                    <h2>Join a Meeting</h2>
+                    <p>Enter a meeting code to join an existing conference</p>
+                    <div class="join-form">
+                        <input type="text" id="meetingCodeInput" placeholder="Enter meeting code" maxlength="6">
+                        <button onclick="joinMeeting()" class="btn btn-secondary">Join Meeting</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/js/app.js"></script>
+</body>
+</html>

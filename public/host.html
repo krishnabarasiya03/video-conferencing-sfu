@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Host Meeting - Video Conferencing SFU</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Host Meeting</h1>
+            <button onclick="goHome()" class="btn btn-link">← Back to Home</button>
+        </div>
+        
+        <div class="meeting-setup">
+            <div class="meeting-info">
+                <h2>Meeting Information</h2>
+                <div class="meeting-code-display">
+                    <label>Meeting Code:</label>
+                    <div class="code-container">
+                        <span id="meetingCode" class="meeting-code">Loading...</span>
+                        <button onclick="copyMeetingCode()" class="btn btn-copy">Copy</button>
+                    </div>
+                    <p class="help-text">Share this code with participants to join your meeting</p>
+                </div>
+                
+                <div class="host-controls">
+                    <div class="input-group">
+                        <label for="hostName">Your Name:</label>
+                        <input type="text" id="hostName" placeholder="Enter your name" value="Host">
+                    </div>
+                    <button onclick="startMeeting()" class="btn btn-primary" id="startBtn">Start Meeting</button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="meetingRoom" class="meeting-room" style="display: none;">
+            <div class="video-container">
+                <div class="local-video-container">
+                    <video id="localVideo" autoplay muted playsinline></video>
+                    <div class="video-label">You (Host)</div>
+                </div>
+                <div id="remoteVideos" class="remote-videos"></div>
+            </div>
+            
+            <div class="meeting-controls">
+                <button onclick="toggleMicrophone()" class="btn btn-control" id="micBtn">🎤</button>
+                <button onclick="toggleCamera()" class="btn btn-control" id="cameraBtn">📹</button>
+                <button onclick="endMeeting()" class="btn btn-danger">End Meeting</button>
+            </div>
+            
+            <div class="participants-panel">
+                <h3>Participants (<span id="participantCount">1</span>)</h3>
+                <div id="participantsList">
+                    <div class="participant">You (Host)</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="loadingMessage" class="loading">
+            Creating meeting room...
+        </div>
+    </div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/host.js"></script>
+</body>
+</html>

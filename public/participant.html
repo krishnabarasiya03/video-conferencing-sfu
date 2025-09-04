@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Join Meeting - Video Conferencing SFU</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Join Meeting</h1>
+            <button onclick="goHome()" class="btn btn-link">← Back to Home</button>
+        </div>
+        
+        <div id="joinForm" class="meeting-setup">
+            <div class="join-info">
+                <h2>Join Conference</h2>
+                <div class="input-group">
+                    <label for="meetingCodeInput">Meeting Code:</label>
+                    <input type="text" id="meetingCodeInput" placeholder="Enter 6-digit code" maxlength="6" required>
+                </div>
+                
+                <div class="input-group">
+                    <label for="participantName">Your Name:</label>
+                    <input type="text" id="participantName" placeholder="Enter your name" required>
+                </div>
+                
+                <button onclick="joinMeeting()" class="btn btn-primary" id="joinBtn">Join Meeting</button>
+            </div>
+        </div>
+        
+        <div id="meetingRoom" class="meeting-room" style="display: none;">
+            <div class="video-container">
+                <div class="local-video-container">
+                    <video id="localVideo" autoplay muted playsinline></video>
+                    <div class="video-label">You</div>
+                </div>
+                <div id="remoteVideos" class="remote-videos"></div>
+            </div>
+            
+            <div class="meeting-controls">
+                <button onclick="toggleMicrophone()" class="btn btn-control" id="micBtn">🎤</button>
+                <button onclick="toggleCamera()" class="btn btn-control" id="cameraBtn">📹</button>
+                <button onclick="leaveMeeting()" class="btn btn-danger">Leave Meeting</button>
+            </div>
+            
+            <div class="participants-panel">
+                <h3>Participants (<span id="participantCount">0</span>)</h3>
+                <div id="participantsList"></div>
+            </div>
+        </div>
+        
+        <div id="loadingMessage" class="loading" style="display: none;">
+            Joining meeting...
+        </div>
+        
+        <div id="errorMessage" class="error" style="display: none;"></div>
+    </div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/participant.js"></script>
+</body>
+</html>
