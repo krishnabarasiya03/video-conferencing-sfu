@@ -89,11 +89,42 @@ async function startMeeting() {
     const hostName = document.getElementById('hostName').value.trim() || 'Host';
     
     try {
-        // Get user media
-        localStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true
-        });
+        // Try to get user media, but fallback to dummy stream if not available
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: true
+            });
+        } catch (mediaError) {
+            console.warn('Camera/microphone not available, creating dummy stream for testing');
+            // Create a dummy canvas stream for testing
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 480;
+            const ctx = canvas.getContext('2d');
+            
+            // Draw a simple test pattern
+            ctx.fillStyle = '#4a90e2';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.font = '24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Host Video (Test Mode)', canvas.width / 2, canvas.height / 2);
+            
+            // Create stream from canvas
+            localStream = canvas.captureStream(30);
+            
+            // Add dummy audio track
+            const audioContext = new AudioContext();
+            const oscillator = audioContext.createOscillator();
+            const destination = audioContext.createMediaStreamDestination();
+            oscillator.connect(destination);
+            oscillator.frequency.value = 440; // A4 note
+            oscillator.start();
+            
+            // Add audio track to stream
+            localStream.addTrack(destination.stream.getAudioTracks()[0]);
+        }
         
         document.getElementById('localVideo').srcObject = localStream;
         
@@ -114,22 +145,34 @@ async function startMeeting() {
         
     } catch (error) {
         console.error('Error starting meeting:', error);
-        alert('Failed to access camera/microphone. Please check permissions.');
+        alert('Failed to start meeting. Please try again.');
     }
 }
 
 function setupSocketListeners() {
     socket.on('host-assigned', () => {
         console.log('Host privileges assigned');
+        // Add host to their own participants list
+        const hostName = document.getElementById('hostName').value.trim() || 'Host';
+        const participantsList = document.getElementById('participantsList');
+        const hostDiv = document.createElement('div');
+        hostDiv.className = 'participant';
+        hostDiv.id = `participant-host`;
+        hostDiv.textContent = `You (Host)`;
+        participantsList.appendChild(hostDiv);
+        updateParticipantCount();
     });
     
     socket.on('user-joined', (data) => {
         console.log('User joined:', data);
-        addParticipant(data.userId, data.userName);
-        updateParticipantCount();
-        
-        // Create peer connection for new user
-        createPeerConnection(data.userId);
+        // Don't add self to the list if this is the host's own join event
+        if (data.userId !== socket.id) {
+            addParticipant(data.userId, data.userName);
+            updateParticipantCount();
+            
+            // Create peer connection for new user
+            createPeerConnection(data.userId);
+        }
     });
     
     socket.on('user-left', (data) => {
@@ -267,6 +310,17 @@ function removeParticipant(userId) {
 }
 
 function addRemoteVideo(userId, stream) {
+    // Check if video container already exists for this user
+    const existingContainer = document.getElementById(`video-container-${userId}`);
+    if (existingContainer) {
+        // Just update the stream source, don't create duplicate
+        const video = existingContainer.querySelector('video');
+        if (video) {
+            video.srcObject = stream;
+        }
+        return;
+    }
+    
     // Remove the participant card and replace with actual video
     const existingCard = document.getElementById(`participant-card-${userId}`);
     if (existingCard) {
@@ -387,13 +441,15 @@ async function toggleScreenShare() {
                 audio: true
             });
             
-            // Replace video track in local stream
+            // Replace video track in all peer connections
             const videoTrack = screenStream.getVideoTracks()[0];
-            const sender = peerConnections[Object.keys(peerConnections)[0]]?.getSenders()
-                .find(s => s.track && s.track.kind === 'video');
             
-            if (sender) {
-                await sender.replaceTrack(videoTrack);
+            for (const userId in peerConnections) {
+                const pc = peerConnections[userId];
+                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender) {
+                    await sender.replaceTrack(videoTrack);
+                }
             }
             
             // Update local video
@@ -432,11 +488,14 @@ async function stopScreenShare() {
         });
         
         const videoTrack = cameraStream.getVideoTracks()[0];
-        const sender = peerConnections[Object.keys(peerConnections)[0]]?.getSenders()
-            .find(s => s.track && s.track.kind === 'video');
         
-        if (sender) {
-            await sender.replaceTrack(videoTrack);
+        // Replace video track in all peer connections
+        for (const userId in peerConnections) {
+            const pc = peerConnections[userId];
+            const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) {
+                await sender.replaceTrack(videoTrack);
+            }
         }
         
         // Update local video
@@ -456,7 +515,19 @@ async function stopScreenShare() {
 
 function updateParticipantCount() {
     const participants = document.querySelectorAll('.participant');
-    document.getElementById('participantCount').textContent = participants.length;
+    // Remove duplicates by checking unique IDs
+    const uniqueIds = new Set();
+    let count = 0;
+    participants.forEach(p => {
+        if (!uniqueIds.has(p.id)) {
+            uniqueIds.add(p.id);
+            count++;
+        } else {
+            // Remove duplicate
+            p.remove();
+        }
+    });
+    document.getElementById('participantCount').textContent = count;
 }
 
 function toggleMicrophone() {

@@ -70,11 +70,43 @@ async function joinMeeting() {
         
         showLoading('Joining meeting...');
         
-        // Get user media
-        localStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true
-        });
+        // Try to get user media, but fallback to dummy stream if not available
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: true
+            });
+        } catch (mediaError) {
+            console.warn('Camera/microphone not available, creating dummy stream for testing');
+            // Create a dummy canvas stream for testing
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 480;
+            const ctx = canvas.getContext('2d');
+            
+            // Draw a simple test pattern
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.font = '24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Participant Video (Test Mode)', canvas.width / 2, canvas.height / 2);
+            ctx.fillText(nameInput, canvas.width / 2, canvas.height / 2 + 40);
+            
+            // Create stream from canvas
+            localStream = canvas.captureStream(30);
+            
+            // Add dummy audio track
+            const audioContext = new AudioContext();
+            const oscillator = audioContext.createOscillator();
+            const destination = audioContext.createMediaStreamDestination();
+            oscillator.connect(destination);
+            oscillator.frequency.value = 660; // E5 note (different from host)
+            oscillator.start();
+            
+            // Add audio track to stream
+            localStream.addTrack(destination.stream.getAudioTracks()[0]);
+        }
         
         document.getElementById('localVideo').srcObject = localStream;
         
@@ -104,6 +136,11 @@ function setupSocketListeners() {
         console.log('Current participants:', participants);
         participants.forEach(participant => {
             addParticipant(participant.userId, participant.userName);
+            // Create peer connection for existing participants (especially the host)
+            if (participant.isHost) {
+                // For host, participant should wait for host to initiate the connection
+                console.log('Host detected in participants list:', participant.userName);
+            }
         });
         updateParticipantCount();
         
@@ -235,10 +272,8 @@ function addParticipant(userId, userName) {
     participantDiv.textContent = userName;
     participantsList.appendChild(participantDiv);
     
-    // Also add to remote participants display (but not for own user)
-    if (userId !== socket.id) {
-        addRemoteParticipant(userId, userName);
-    }
+    // Add to remote participants display for all users (including host)
+    addRemoteParticipant(userId, userName);
 }
 
 function removeParticipant(userId) {
@@ -252,6 +287,17 @@ function removeParticipant(userId) {
 }
 
 function addRemoteVideo(userId, stream) {
+    // Check if video container already exists for this user
+    const existingContainer = document.getElementById(`video-container-${userId}`);
+    if (existingContainer) {
+        // Just update the stream source, don't create duplicate
+        const video = existingContainer.querySelector('video');
+        if (video) {
+            video.srcObject = stream;
+        }
+        return;
+    }
+    
     // Remove the participant card and replace with actual video
     const existingCard = document.getElementById(`participant-card-${userId}`);
     if (existingCard) {
@@ -372,13 +418,15 @@ async function toggleScreenShare() {
                 audio: true
             });
             
-            // Replace video track in local stream
+            // Replace video track in all peer connections
             const videoTrack = screenStream.getVideoTracks()[0];
-            const sender = peerConnections[Object.keys(peerConnections)[0]]?.getSenders()
-                .find(s => s.track && s.track.kind === 'video');
             
-            if (sender) {
-                await sender.replaceTrack(videoTrack);
+            for (const userId in peerConnections) {
+                const pc = peerConnections[userId];
+                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender) {
+                    await sender.replaceTrack(videoTrack);
+                }
             }
             
             // Update local video
@@ -417,11 +465,14 @@ async function stopScreenShare() {
         });
         
         const videoTrack = cameraStream.getVideoTracks()[0];
-        const sender = peerConnections[Object.keys(peerConnections)[0]]?.getSenders()
-            .find(s => s.track && s.track.kind === 'video');
         
-        if (sender) {
-            await sender.replaceTrack(videoTrack);
+        // Replace video track in all peer connections
+        for (const userId in peerConnections) {
+            const pc = peerConnections[userId];
+            const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) {
+                await sender.replaceTrack(videoTrack);
+            }
         }
         
         // Update local video
