@@ -21,6 +21,9 @@ app.use(express.static(path.join(__dirname, '../public')));
 // Store meeting rooms with their codes
 const meetingRooms = new Map();
 
+// Store user information
+const users = new Map();
+
 // Generate a 6-digit meeting code
 function generateMeetingCode() {
     return Math.floor(100000 + Math.random() * 900000).toString();
@@ -116,6 +119,9 @@ io.on('connection', (socket) => {
         socket.userName = userName;
         socket.isHost = isHost;
         
+        // Store user information
+        users.set(socket.id, { userName, isHost });
+        
         if (isHost && !meetingRoom.host) {
             meetingRoom.host = socket.id;
             socket.emit('host-assigned');
@@ -130,11 +136,34 @@ io.on('connection', (socket) => {
             isHost: isHost
         });
         
-        // Send current participants to the new user
-        const participants = Array.from(meetingRoom.participants).map(id => ({
-            userId: id,
-            userName: `User-${id.substring(0, 6)}` // Simplified for demo
-        }));
+        // Send current participants to the new user (including host if they exist)
+        const participants = [];
+        
+        // Add host to participants list if host exists and current user is not the host
+        if (meetingRoom.host && meetingRoom.host !== socket.id) {
+            const hostInfo = users.get(meetingRoom.host);
+            if (hostInfo) {
+                participants.push({
+                    userId: meetingRoom.host,
+                    userName: hostInfo.userName,
+                    isHost: true
+                });
+            }
+        }
+        
+        // Add other participants
+        Array.from(meetingRoom.participants).forEach(id => {
+            if (id !== socket.id) {
+                const userInfo = users.get(id);
+                if (userInfo) {
+                    participants.push({
+                        userId: id,
+                        userName: userInfo.userName,
+                        isHost: false
+                    });
+                }
+            }
+        });
         
         socket.emit('participants-list', participants);
         
@@ -176,6 +205,9 @@ io.on('connection', (socket) => {
     
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
+        
+        // Clean up user info
+        users.delete(socket.id);
         
         if (socket.meetingCode) {
             const meetingRoom = meetingRooms.get(socket.meetingCode);

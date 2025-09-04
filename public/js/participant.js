@@ -104,6 +104,11 @@ function setupSocketListeners() {
         console.log('Current participants:', participants);
         participants.forEach(participant => {
             addParticipant(participant.userId, participant.userName);
+            // Create peer connection for existing participants (especially the host)
+            if (participant.isHost) {
+                // For host, participant should wait for host to initiate the connection
+                console.log('Host detected in participants list:', participant.userName);
+            }
         });
         updateParticipantCount();
         
@@ -235,10 +240,8 @@ function addParticipant(userId, userName) {
     participantDiv.textContent = userName;
     participantsList.appendChild(participantDiv);
     
-    // Also add to remote participants display (but not for own user)
-    if (userId !== socket.id) {
-        addRemoteParticipant(userId, userName);
-    }
+    // Add to remote participants display for all users (including host)
+    addRemoteParticipant(userId, userName);
 }
 
 function removeParticipant(userId) {
@@ -372,13 +375,15 @@ async function toggleScreenShare() {
                 audio: true
             });
             
-            // Replace video track in local stream
+            // Replace video track in all peer connections
             const videoTrack = screenStream.getVideoTracks()[0];
-            const sender = peerConnections[Object.keys(peerConnections)[0]]?.getSenders()
-                .find(s => s.track && s.track.kind === 'video');
             
-            if (sender) {
-                await sender.replaceTrack(videoTrack);
+            for (const userId in peerConnections) {
+                const pc = peerConnections[userId];
+                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender) {
+                    await sender.replaceTrack(videoTrack);
+                }
             }
             
             // Update local video
@@ -417,11 +422,14 @@ async function stopScreenShare() {
         });
         
         const videoTrack = cameraStream.getVideoTracks()[0];
-        const sender = peerConnections[Object.keys(peerConnections)[0]]?.getSenders()
-            .find(s => s.track && s.track.kind === 'video');
         
-        if (sender) {
-            await sender.replaceTrack(videoTrack);
+        // Replace video track in all peer connections
+        for (const userId in peerConnections) {
+            const pc = peerConnections[userId];
+            const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) {
+                await sender.replaceTrack(videoTrack);
+            }
         }
         
         // Update local video

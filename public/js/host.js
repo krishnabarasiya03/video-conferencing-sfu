@@ -121,6 +121,15 @@ async function startMeeting() {
 function setupSocketListeners() {
     socket.on('host-assigned', () => {
         console.log('Host privileges assigned');
+        // Add host to their own participants list
+        const hostName = document.getElementById('hostName').value.trim() || 'Host';
+        const participantsList = document.getElementById('participantsList');
+        const hostDiv = document.createElement('div');
+        hostDiv.className = 'participant';
+        hostDiv.id = `participant-host`;
+        hostDiv.textContent = `${hostName} (Host)`;
+        participantsList.appendChild(hostDiv);
+        updateParticipantCount();
     });
     
     socket.on('user-joined', (data) => {
@@ -387,13 +396,15 @@ async function toggleScreenShare() {
                 audio: true
             });
             
-            // Replace video track in local stream
+            // Replace video track in all peer connections
             const videoTrack = screenStream.getVideoTracks()[0];
-            const sender = peerConnections[Object.keys(peerConnections)[0]]?.getSenders()
-                .find(s => s.track && s.track.kind === 'video');
             
-            if (sender) {
-                await sender.replaceTrack(videoTrack);
+            for (const userId in peerConnections) {
+                const pc = peerConnections[userId];
+                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender) {
+                    await sender.replaceTrack(videoTrack);
+                }
             }
             
             // Update local video
@@ -432,11 +443,14 @@ async function stopScreenShare() {
         });
         
         const videoTrack = cameraStream.getVideoTracks()[0];
-        const sender = peerConnections[Object.keys(peerConnections)[0]]?.getSenders()
-            .find(s => s.track && s.track.kind === 'video');
         
-        if (sender) {
-            await sender.replaceTrack(videoTrack);
+        // Replace video track in all peer connections
+        for (const userId in peerConnections) {
+            const pc = peerConnections[userId];
+            const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) {
+                await sender.replaceTrack(videoTrack);
+            }
         }
         
         // Update local video
