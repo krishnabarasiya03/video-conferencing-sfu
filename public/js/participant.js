@@ -1,12 +1,7 @@
 // Participant page JavaScript
 let socket;
-let localStream;
 let peerConnections = {};
 let meetingCode;
-let isMicMuted = false;
-let isCameraOff = false;
-let isScreenSharing = false;
-let screenStream = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     // Check if meeting code was passed from the main page
@@ -30,9 +25,6 @@ document.addEventListener('DOMContentLoaded', function() {
 function goHome() {
     if (socket) {
         socket.disconnect();
-    }
-    if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
     }
     window.location.href = '/';
 }
@@ -70,73 +62,7 @@ async function joinMeeting() {
         
         showLoading('Joining meeting...');
         
-        // Try to get user media, but fallback to dummy stream if not available
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-                audio: true
-            });
-        } catch (mediaError) {
-            console.warn('Camera/microphone not available, creating dummy stream for testing');
-            // Create a dummy canvas stream for testing
-            const canvas = document.createElement('canvas');
-            canvas.width = 640;
-            canvas.height = 480;
-            const ctx = canvas.getContext('2d');
-            
-            // Create animated canvas with changing content
-            let frame = 0;
-            function drawFrame() {
-                // Clear canvas
-                ctx.fillStyle = '#e74c3c';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // Draw animated content
-                ctx.fillStyle = 'white';
-                ctx.font = '24px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('Participant Video (Test Mode)', canvas.width / 2, canvas.height / 2 - 40);
-                ctx.fillText(nameInput, canvas.width / 2, canvas.height / 2 - 10);
-                
-                // Add a simple animation - rotating square
-                const time = Date.now() * 0.003;
-                const centerX = canvas.width / 2;
-                const centerY = canvas.height / 2 + 40;
-                
-                ctx.save();
-                ctx.translate(centerX, centerY);
-                ctx.rotate(time);
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                ctx.fillRect(-15, -15, 30, 30);
-                ctx.restore();
-                
-                // Add frame counter for visual confirmation
-                ctx.fillStyle = 'white';
-                ctx.font = '16px Arial';
-                ctx.fillText(`Frame: ${frame++}`, canvas.width / 2, canvas.height - 30);
-                
-                requestAnimationFrame(drawFrame);
-            }
-            drawFrame();
-            
-            // Create stream from canvas
-            localStream = canvas.captureStream(30);
-            
-            // Add dummy audio track
-            const audioContext = new AudioContext();
-            const oscillator = audioContext.createOscillator();
-            const destination = audioContext.createMediaStreamDestination();
-            oscillator.connect(destination);
-            oscillator.frequency.value = 660; // E5 note (different from host)
-            oscillator.start();
-            
-            // Add audio track to stream
-            localStream.addTrack(destination.stream.getAudioTracks()[0]);
-        }
-        
-        document.getElementById('localVideo').srcObject = localStream;
-        
-        // Initialize Socket.IO
+        // Initialize Socket.IO - no media access required for participants
         socket = io();
         
         socket.emit('join-meeting', {
@@ -149,11 +75,7 @@ async function joinMeeting() {
         
     } catch (error) {
         console.error('Error joining meeting:', error);
-        if (error.name === 'NotAllowedError') {
-            showError('Camera/microphone access denied. Please allow access and try again.');
-        } else {
-            showError('Failed to join meeting. Please try again.');
-        }
+        showError('Failed to join meeting. Please try again.');
     }
 }
 
@@ -235,10 +157,7 @@ function createPeerConnection(userId) {
         ]
     });
     
-    // Add local stream
-    localStream.getTracks().forEach(track => {
-        pc.addTrack(track, localStream);
-    });
+    // Participants don't share their own media - they only receive host's stream
     
     // Handle remote stream
     pc.ontrack = (event) => {
@@ -437,127 +356,14 @@ function addChatMessage(sender, message, isOwn = false) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-async function toggleScreenShare() {
-    const screenShareBtn = document.getElementById('screenShareBtn');
-    
-    if (!isScreenSharing) {
-        try {
-            screenStream = await navigator.mediaDevices.getDisplayMedia({
-                video: true,
-                audio: true
-            });
-            
-            // Replace video track in all peer connections
-            const videoTrack = screenStream.getVideoTracks()[0];
-            
-            for (const userId in peerConnections) {
-                const pc = peerConnections[userId];
-                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-                if (sender) {
-                    await sender.replaceTrack(videoTrack);
-                }
-            }
-            
-            // Update local video
-            const localVideo = document.getElementById('localVideo');
-            localVideo.srcObject = screenStream;
-            
-            isScreenSharing = true;
-            screenShareBtn.textContent = '⏹️';
-            screenShareBtn.classList.add('active');
-            
-            // Listen for screen share end
-            videoTrack.onended = () => {
-                stopScreenShare();
-            };
-            
-        } catch (error) {
-            console.error('Error starting screen share:', error);
-            alert('Failed to start screen sharing');
-        }
-    } else {
-        stopScreenShare();
-    }
-}
-
-async function stopScreenShare() {
-    if (screenStream) {
-        screenStream.getTracks().forEach(track => track.stop());
-        screenStream = null;
-    }
-    
-    // Restore camera
-    try {
-        const cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true
-        });
-        
-        const videoTrack = cameraStream.getVideoTracks()[0];
-        
-        // Replace video track in all peer connections
-        for (const userId in peerConnections) {
-            const pc = peerConnections[userId];
-            const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-            if (sender) {
-                await sender.replaceTrack(videoTrack);
-            }
-        }
-        
-        // Update local video
-        const localVideo = document.getElementById('localVideo');
-        localVideo.srcObject = cameraStream;
-        localStream = cameraStream;
-        
-    } catch (error) {
-        console.error('Error restoring camera:', error);
-    }
-    
-    isScreenSharing = false;
-    const screenShareBtn = document.getElementById('screenShareBtn');
-    screenShareBtn.textContent = '🖥️';
-    screenShareBtn.classList.remove('active');
-}
-
 function updateParticipantCount() {
     const participants = document.querySelectorAll('.participant');
     document.getElementById('participantCount').textContent = participants.length + 1; // +1 for self
 }
 
-function toggleMicrophone() {
-    if (localStream) {
-        const audioTrack = localStream.getAudioTracks()[0];
-        if (audioTrack) {
-            audioTrack.enabled = !audioTrack.enabled;
-            isMicMuted = !audioTrack.enabled;
-            
-            const micBtn = document.getElementById('micBtn');
-            micBtn.textContent = isMicMuted ? '🔇' : '🎤';
-            micBtn.classList.toggle('muted', isMicMuted);
-        }
-    }
-}
-
-function toggleCamera() {
-    if (localStream) {
-        const videoTrack = localStream.getVideoTracks()[0];
-        if (videoTrack) {
-            videoTrack.enabled = !videoTrack.enabled;
-            isCameraOff = !videoTrack.enabled;
-            
-            const cameraBtn = document.getElementById('cameraBtn');
-            cameraBtn.textContent = isCameraOff ? '📷' : '📹';
-            cameraBtn.classList.toggle('muted', isCameraOff);
-        }
-    }
-}
-
 function leaveMeeting() {
     if (socket) {
         socket.disconnect();
-    }
-    if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
     }
     
     // Close all peer connections
@@ -620,15 +426,6 @@ function handleEscapeKey(event) {
 
 // Add click event listeners when meeting starts
 function addVideoClickListeners() {
-    // Add click listener for local video
-    const localVideoContainer = document.querySelector('.local-video-container');
-    if (localVideoContainer) {
-        localVideoContainer.addEventListener('click', function() {
-            const localVideo = document.getElementById('localVideo');
-            expandVideo(localVideo);
-        });
-    }
-    
     // Add click listeners for remote videos (will be added dynamically when participants join)
     const remoteParticipants = document.getElementById('remoteParticipants');
     if (remoteParticipants) {
