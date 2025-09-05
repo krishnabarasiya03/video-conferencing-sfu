@@ -120,6 +120,19 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Video Playback Modal -->
+        <div id="videoPlaybackModal" class="video-playback-modal">
+            <div class="video-playback-content">
+                <button class="video-playback-close" onclick="closeVideoPlaybackModal()">&times;</button>
+                <video id="playbackVideo" controls autoplay>
+                    Your browser does not support the video tag.
+                </video>
+                <div class="video-playback-info">
+                    <span id="playbackTitle">Recording Playback</span>
+                </div>
+            </div>
+        </div>
     </div>
     
     <script src="/socket.io/socket.io.js"></script>

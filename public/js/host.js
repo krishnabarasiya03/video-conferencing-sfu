@@ -678,8 +678,8 @@ async function startRecording() {
     try {
         // Create a canvas to composite the meeting content
         const canvas = document.createElement('canvas');
-        canvas.width = 1920;
-        canvas.height = 1080;
+        canvas.width = 1280;
+        canvas.height = 720;
         const ctx = canvas.getContext('2d');
         
         // Set up drawing style
@@ -703,10 +703,10 @@ async function startRecording() {
             
             // Draw local video (host) - larger size in top-left
             if (localVideo && localVideo.videoWidth > 0) {
-                const localWidth = 480;
-                const localHeight = 360;
-                const localX = 50;
-                const localY = 80;
+                const localWidth = 320;
+                const localHeight = 240;
+                const localX = 30;
+                const localY = 60;
                 
                 try {
                     ctx.drawImage(localVideo, localX, localY, localWidth, localHeight);
@@ -731,11 +731,11 @@ async function startRecording() {
             // Draw remote participant videos
             if (remoteParticipants) {
                 const remoteVideos = remoteParticipants.querySelectorAll('video');
-                const participantWidth = 320;
-                const participantHeight = 240;
-                const startX = 600;
-                const startY = 80;
-                const spacing = 350;
+                const participantWidth = 240;
+                const participantHeight = 180;
+                const startX = 400;
+                const startY = 60;
+                const spacing = 260;
                 
                 remoteVideos.forEach((video, index) => {
                     if (video.videoWidth > 0) {
@@ -1074,6 +1074,7 @@ function createRecordingItem(recording) {
             </div>
         </div>
         <div class="recording-actions">
+            <button class="btn-play" onclick="playStoredRecording(${recording.id})">Play</button>
             <button class="btn-download" onclick="downloadStoredRecording(${recording.id})">Download</button>
             <button class="btn-delete" onclick="deleteRecording(${recording.id})">Delete</button>
         </div>
@@ -1112,11 +1113,75 @@ function deleteRecording(recordingId) {
     }
 }
 
+function playStoredRecording(recordingId) {
+    const recordings = getStoredRecordings();
+    const recording = recordings.find(r => r.id === recordingId);
+    
+    if (recording) {
+        // Convert base64 back to blob
+        fetch(recording.data)
+            .then(res => res.blob())
+            .then(blob => {
+                const videoUrl = URL.createObjectURL(blob);
+                showVideoPlayback(videoUrl, recording.filename);
+            })
+            .catch(error => {
+                console.error('Error playing recording:', error);
+                alert('Failed to play recording');
+            });
+    }
+}
+
+function showVideoPlayback(videoUrl, filename) {
+    const modal = document.getElementById('videoPlaybackModal');
+    const video = document.getElementById('playbackVideo');
+    const title = document.getElementById('playbackTitle');
+    
+    video.src = videoUrl;
+    title.textContent = filename;
+    modal.classList.add('active');
+    
+    // Add ESC key listener to close modal
+    document.addEventListener('keydown', handleVideoPlaybackEscape);
+    
+    // Clean up URL when video ends or modal closes
+    video.addEventListener('ended', () => {
+        URL.revokeObjectURL(videoUrl);
+    });
+}
+
+function closeVideoPlaybackModal() {
+    const modal = document.getElementById('videoPlaybackModal');
+    const video = document.getElementById('playbackVideo');
+    
+    modal.classList.remove('active');
+    
+    // Clean up video source and URL
+    if (video.src && video.src.startsWith('blob:')) {
+        URL.revokeObjectURL(video.src);
+    }
+    video.src = '';
+    
+    // Remove ESC key listener
+    document.removeEventListener('keydown', handleVideoPlaybackEscape);
+}
+
+function handleVideoPlaybackEscape(event) {
+    if (event.key === 'Escape') {
+        closeVideoPlaybackModal();
+    }
+}
+
 // Close modals when clicking outside
 document.addEventListener('click', function(event) {
     const recordingsModal = document.getElementById('recordingsModal');
     if (event.target === recordingsModal) {
         closeRecordingsModal();
+    }
+    
+    const videoPlaybackModal = document.getElementById('videoPlaybackModal');
+    if (event.target === videoPlaybackModal) {
+        closeVideoPlaybackModal();
     }
 });
 
