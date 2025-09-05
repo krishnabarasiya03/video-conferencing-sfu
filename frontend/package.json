@@ -1,0 +1,21 @@
+{
+  "name": "video-conferencing-frontend",
+  "version": "1.0.0",
+  "description": "Frontend for SFU video conferencing application",
+  "scripts": {
+    "dev": "npx http-server public -p 8080",
+    "build": "echo 'No build step required for vanilla JS frontend'",
+    "serve": "npx http-server public -p 8080"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  },
+  "keywords": [
+    "video-conferencing",
+    "webrtc",
+    "frontend",
+    "vanilla-js"
+  ],
+  "author": "krishnabarasiya03",
+  "license": "MIT"
+}
