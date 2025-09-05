@@ -682,166 +682,283 @@ async function startRecording() {
         canvas.height = 1080;
         const ctx = canvas.getContext('2d');
         
-        // Set up drawing style
-        ctx.fillStyle = '#1a1a1a';
-        ctx.font = '24px Arial';
+        // Add roundRect polyfill for older browsers
+        if (!ctx.roundRect) {
+            ctx.roundRect = function(x, y, width, height, radius) {
+                this.beginPath();
+                this.moveTo(x + radius, y);
+                this.lineTo(x + width - radius, y);
+                this.quadraticCurveTo(x + width, y, x + width, y + radius);
+                this.lineTo(x + width, y + height - radius);
+                this.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+                this.lineTo(x + radius, y + height);
+                this.quadraticCurveTo(x, y + height, x, y + height - radius);
+                this.lineTo(x, y + radius);
+                this.quadraticCurveTo(x, y, x + radius, y);
+                this.closePath();
+            };
+        }
         
         // Get video elements for compositing
         const localVideo = document.getElementById('localVideo');
         const remoteParticipants = document.getElementById('remoteParticipants');
         
-        // Function to draw the meeting content onto canvas
+        // Create Web Audio API context for proper audio mixing
+        const audioContext = new AudioContext();
+        const audioDestination = audioContext.createMediaStreamDestination();
+        
+        // Collect and mix audio from all sources
+        const audioSources = [];
+        
+        // Add microphone audio from local stream with proper mixing
+        if (localStream && !isMicMuted) {
+            const micAudioTracks = localStream.getAudioTracks();
+            if (micAudioTracks.length > 0) {
+                try {
+                    const micSource = audioContext.createMediaStreamSource(new MediaStream([micAudioTracks[0]]));
+                    const micGain = audioContext.createGain();
+                    micGain.gain.value = 1.0; // Full volume for host
+                    micSource.connect(micGain);
+                    micGain.connect(audioDestination);
+                    audioSources.push({ source: micSource, gain: micGain, name: 'Host Microphone' });
+                    console.log('Added host microphone audio to recording');
+                } catch (audioError) {
+                    console.warn('Failed to add host microphone audio:', audioError);
+                }
+            }
+        }
+        
+        // Add audio from remote participants with proper mixing
+        Object.entries(peerConnections).forEach(([userId, pc]) => {
+            try {
+                const receivers = pc.getReceivers();
+                receivers.forEach(receiver => {
+                    if (receiver.track && receiver.track.kind === 'audio' && receiver.track.readyState === 'live') {
+                        try {
+                            const participantSource = audioContext.createMediaStreamSource(new MediaStream([receiver.track]));
+                            const participantGain = audioContext.createGain();
+                            participantGain.gain.value = 1.0; // Full volume for participants
+                            participantSource.connect(participantGain);
+                            participantGain.connect(audioDestination);
+                            audioSources.push({ source: participantSource, gain: participantGain, name: `Participant ${userId}` });
+                            console.log(`Added participant ${userId} audio to recording`);
+                        } catch (participantAudioError) {
+                            console.warn(`Failed to add participant ${userId} audio:`, participantAudioError);
+                        }
+                    }
+                });
+            } catch (pcError) {
+                console.warn(`Failed to process audio for participant ${userId}:`, pcError);
+            }
+        });
+        
+        console.log(`Recording will include ${audioSources.length} audio source(s)`);
+        
+        // Function to calculate optimal grid layout for full-screen experience
+        function calculateGridLayout(totalVideos) {
+            if (totalVideos === 1) {
+                return { cols: 1, rows: 1, videoWidth: 960, videoHeight: 720 };
+            } else if (totalVideos === 2) {
+                return { cols: 2, rows: 1, videoWidth: 860, videoHeight: 645 };
+            } else if (totalVideos <= 4) {
+                return { cols: 2, rows: 2, videoWidth: 860, videoHeight: 480 };
+            } else if (totalVideos <= 6) {
+                return { cols: 3, rows: 2, videoWidth: 560, videoHeight: 420 };
+            } else {
+                return { cols: 4, rows: 2, videoWidth: 420, videoHeight: 315 };
+            }
+        }
+        
+        // Function to draw the meeting content onto canvas with improved full-screen layout
         function drawMeetingContent() {
             // Clear canvas with dark background
             ctx.fillStyle = '#1a1a1a';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Draw title
+            // Draw title with better styling
             ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 28px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('Meeting Recording', canvas.width / 2, 40);
             
-            // Draw local video (host) - larger size in top-left
+            // Collect all videos (local + remote)
+            const allVideos = [];
+            
+            // Add local video (host)
             if (localVideo && localVideo.videoWidth > 0) {
-                const localWidth = 480;
-                const localHeight = 360;
-                const localX = 50;
-                const localY = 80;
-                
-                try {
-                    ctx.drawImage(localVideo, localX, localY, localWidth, localHeight);
-                    
-                    // Add label for local video
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                    ctx.fillRect(localX, localY + localHeight - 40, localWidth, 40);
-                    ctx.fillStyle = '#ffffff';
-                    ctx.font = '16px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('You (Host)', localX + localWidth / 2, localY + localHeight - 15);
-                } catch (e) {
-                    // If video not ready, draw placeholder
-                    ctx.fillStyle = '#333333';
-                    ctx.fillRect(localX, localY, localWidth, localHeight);
-                    ctx.fillStyle = '#ffffff';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('Host Video', localX + localWidth / 2, localY + localHeight / 2);
-                }
+                allVideos.push({
+                    video: localVideo,
+                    name: 'You (Host)',
+                    isHost: true
+                });
             }
             
-            // Draw remote participant videos
+            // Add remote participant videos
             if (remoteParticipants) {
                 const remoteVideos = remoteParticipants.querySelectorAll('video');
-                const participantWidth = 320;
-                const participantHeight = 240;
-                const startX = 600;
-                const startY = 80;
-                const spacing = 350;
-                
                 remoteVideos.forEach((video, index) => {
                     if (video.videoWidth > 0) {
-                        const x = startX + (index % 3) * spacing;
-                        const y = startY + Math.floor(index / 3) * (participantHeight + 60);
+                        const container = video.closest('.remote-video-container');
+                        const label = container ? container.querySelector('.video-label') : null;
+                        const participantName = label ? label.textContent : `Participant ${index + 1}`;
                         
-                        try {
-                            ctx.drawImage(video, x, y, participantWidth, participantHeight);
-                            
-                            // Add label for participant
-                            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                            ctx.fillRect(x, y + participantHeight - 30, participantWidth, 30);
-                            ctx.fillStyle = '#ffffff';
-                            ctx.font = '14px Arial';
-                            ctx.textAlign = 'center';
-                            
-                            // Get participant name from the video container
-                            const container = video.closest('.remote-video-container');
-                            const label = container ? container.querySelector('.video-label') : null;
-                            const participantName = label ? label.textContent : `Participant ${index + 1}`;
-                            
-                            ctx.fillText(participantName, x + participantWidth / 2, y + participantHeight - 10);
-                        } catch (e) {
-                            // If video not ready, draw placeholder
-                            ctx.fillStyle = '#333333';
-                            ctx.fillRect(x, y, participantWidth, participantHeight);
-                            ctx.fillStyle = '#ffffff';
-                            ctx.textAlign = 'center';
-                            ctx.fillText(`Participant ${index + 1}`, x + participantWidth / 2, y + participantHeight / 2);
-                        }
+                        allVideos.push({
+                            video: video,
+                            name: participantName,
+                            isHost: false
+                        });
                     }
                 });
             }
             
-            // Add recording timestamp
+            // Calculate grid layout for optimal full-screen experience
+            const layout = calculateGridLayout(allVideos.length);
+            const marginX = 40;
+            const marginY = 80;
+            const spacingX = 20;
+            const spacingY = 20;
+            
+            // Calculate starting positions to center the grid
+            const totalGridWidth = layout.cols * layout.videoWidth + (layout.cols - 1) * spacingX;
+            const totalGridHeight = layout.rows * layout.videoHeight + (layout.rows - 1) * spacingY;
+            const startX = (canvas.width - totalGridWidth) / 2;
+            const startY = marginY + 20; // Leave space for title
+            
+            // Draw all videos in grid layout
+            allVideos.forEach((videoInfo, index) => {
+                const col = index % layout.cols;
+                const row = Math.floor(index / layout.cols);
+                
+                const x = startX + col * (layout.videoWidth + spacingX);
+                const y = startY + row * (layout.videoHeight + spacingY);
+                
+                try {
+                    // Draw video with rounded corners effect
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, layout.videoWidth, layout.videoHeight, 8);
+                    ctx.clip();
+                    
+                    ctx.drawImage(videoInfo.video, x, y, layout.videoWidth, layout.videoHeight);
+                    ctx.restore();
+                    
+                    // Add border for host video
+                    if (videoInfo.isHost) {
+                        ctx.strokeStyle = '#4CAF50';
+                        ctx.lineWidth = 4;
+                        ctx.strokeRect(x - 2, y - 2, layout.videoWidth + 4, layout.videoHeight + 4);
+                    }
+                    
+                    // Add label with better styling
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                    ctx.fillRect(x, y + layout.videoHeight - 45, layout.videoWidth, 45);
+                    
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 18px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(videoInfo.name, x + layout.videoWidth / 2, y + layout.videoHeight - 15);
+                    
+                    // Add host indicator
+                    if (videoInfo.isHost) {
+                        ctx.fillStyle = '#4CAF50';
+                        ctx.font = '14px Arial';
+                        ctx.fillText('(HOST)', x + layout.videoWidth / 2, y + layout.videoHeight - 32);
+                    }
+                    
+                } catch (e) {
+                    // If video not ready, draw placeholder with better styling
+                    ctx.fillStyle = '#333333';
+                    ctx.fillRect(x, y, layout.videoWidth, layout.videoHeight);
+                    
+                    ctx.fillStyle = '#666666';
+                    ctx.strokeStyle = '#555555';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, layout.videoWidth, layout.videoHeight);
+                    
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 24px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(videoInfo.name, x + layout.videoWidth / 2, y + layout.videoHeight / 2 - 10);
+                    
+                    ctx.font = '16px Arial';
+                    ctx.fillStyle = '#cccccc';
+                    ctx.fillText('Video Loading...', x + layout.videoWidth / 2, y + layout.videoHeight / 2 + 20);
+                }
+            });
+            
+            // Add recording info and timestamp with better positioning
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(20, canvas.height - 80, 400, 60);
+            
             ctx.fillStyle = '#ffffff';
-            ctx.font = '16px Arial';
+            ctx.font = 'bold 16px Arial';
             ctx.textAlign = 'left';
             const now = new Date();
-            ctx.fillText(`Recording: ${now.toLocaleString()}`, 50, canvas.height - 30);
+            ctx.fillText(`🔴 Recording: ${now.toLocaleString()}`, 35, canvas.height - 50);
+            
+            // Add participant count
+            ctx.font = '14px Arial';
+            ctx.fillStyle = '#cccccc';
+            ctx.fillText(`Participants: ${allVideos.length}`, 35, canvas.height - 30);
         }
         
-        // Start the drawing loop
+        // Start the drawing loop with better frame management
         let animationFrame;
         function animate() {
-            drawMeetingContent();
-            animationFrame = requestAnimationFrame(animate);
+            try {
+                drawMeetingContent();
+                animationFrame = requestAnimationFrame(animate);
+            } catch (error) {
+                console.error('Error in animation frame:', error);
+                // Continue animating even if one frame fails
+                animationFrame = requestAnimationFrame(animate);
+            }
         }
         animate();
         
-        // Capture video stream from canvas
+        // Capture video stream from canvas with higher quality
         const canvasStream = canvas.captureStream(30); // 30 FPS
         
-        // Collect audio tracks from all sources
-        const audioTracks = [];
-        
-        // Add microphone audio from local stream
-        if (localStream) {
-            const micAudioTracks = localStream.getAudioTracks();
-            if (micAudioTracks.length > 0 && !isMicMuted) {
-                audioTracks.push(micAudioTracks[0]);
-            }
-        }
-        
-        // Add audio from remote participants
-        Object.values(peerConnections).forEach(pc => {
-            // Use getReceivers() for modern WebRTC API
-            const receivers = pc.getReceivers();
-            receivers.forEach(receiver => {
-                if (receiver.track && receiver.track.kind === 'audio' && receiver.track.readyState === 'live') {
-                    audioTracks.push(receiver.track);
-                }
-            });
-        });
-        
-        // Create combined stream with canvas video and all audio
+        // Create combined stream with canvas video and mixed audio
         const combinedStream = new MediaStream([
             ...canvasStream.getVideoTracks(),
-            ...audioTracks
+            ...audioDestination.stream.getAudioTracks()
         ]);
         
-        // Store animation frame ID for cleanup
+        // Store cleanup data
         combinedStream._animationFrame = animationFrame;
+        combinedStream._audioContext = audioContext;
+        combinedStream._audioSources = audioSources;
 
-        // Check for MediaRecorder support
-        if (!MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
-            if (!MediaRecorder.isTypeSupported('video/webm')) {
-                throw new Error('WebM recording not supported');
-            }
+        // Check for MediaRecorder support with better error handling
+        let mimeType = 'video/webm';
+        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
+            mimeType = 'video/webm;codecs=vp9,opus';
+        } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+            mimeType = 'video/webm;codecs=vp8,opus';
+        } else if (!MediaRecorder.isTypeSupported('video/webm')) {
+            throw new Error('WebM recording not supported in this browser');
         }
+        
+        console.log('Using MIME type:', mimeType);
 
-        // Initialize MediaRecorder
+        // Initialize MediaRecorder with better settings
         recordedChunks = [];
-        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
-            ? 'video/webm;codecs=vp9,opus' 
-            : 'video/webm';
-            
-        mediaRecorder = new MediaRecorder(combinedStream, { mimeType });
+        mediaRecorder = new MediaRecorder(combinedStream, { 
+            mimeType,
+            videoBitsPerSecond: 5000000, // 5 Mbps for better quality
+            audioBitsPerSecond: 128000   // 128 kbps for good audio quality
+        });
 
         mediaRecorder.ondataavailable = function(event) {
-            if (event.data.size > 0) {
+            if (event.data && event.data.size > 0) {
                 recordedChunks.push(event.data);
+                console.log(`Recorded chunk: ${event.data.size} bytes`);
             }
         };
 
         mediaRecorder.onstop = function() {
+            console.log('MediaRecorder stopped, total chunks:', recordedChunks.length);
             saveRecording();
         };
 
@@ -851,9 +968,7 @@ async function startRecording() {
             stopRecording();
         };
 
-        // No need to listen for screen share ending since we're recording meeting content directly
-        
-        // Start recording
+        // Start recording with better error handling
         mediaRecorder.start(1000); // Collect data every 1 second
         isRecording = true;
         recordingStartTime = Date.now();
@@ -862,7 +977,7 @@ async function startRecording() {
         updateRecordingUI();
         startRecordingTimer();
 
-        console.log('Recording started successfully');
+        console.log('Recording started successfully with improved audio/video quality');
 
     } catch (error) {
         console.error('Error starting recording:', error);
@@ -886,21 +1001,59 @@ function stopRecording() {
         mediaRecorder.stop();
         isRecording = false;
         
-        // Stop animation frame if it exists
+        // Clean up animation frame
         if (mediaRecorder.stream && mediaRecorder.stream._animationFrame) {
             cancelAnimationFrame(mediaRecorder.stream._animationFrame);
+            console.log('Animation frame cancelled');
+        }
+        
+        // Clean up audio context and sources
+        if (mediaRecorder.stream && mediaRecorder.stream._audioContext) {
+            try {
+                // Disconnect audio sources
+                if (mediaRecorder.stream._audioSources) {
+                    mediaRecorder.stream._audioSources.forEach(({ source, gain, name }) => {
+                        try {
+                            source.disconnect();
+                            gain.disconnect();
+                            console.log(`Disconnected audio source: ${name}`);
+                        } catch (e) {
+                            console.warn(`Failed to disconnect audio source ${name}:`, e);
+                        }
+                    });
+                }
+                
+                // Close audio context
+                mediaRecorder.stream._audioContext.close().then(() => {
+                    console.log('Audio context closed successfully');
+                }).catch(e => {
+                    console.warn('Failed to close audio context:', e);
+                });
+            } catch (error) {
+                console.warn('Error cleaning up audio resources:', error);
+            }
         }
         
         // Stop all tracks
         if (mediaRecorder.stream) {
-            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            mediaRecorder.stream.getTracks().forEach(track => {
+                track.stop();
+                console.log(`Stopped track: ${track.kind}`);
+            });
+        }
+        
+        // Clear references to prevent memory leaks
+        if (mediaRecorder.stream) {
+            mediaRecorder.stream._animationFrame = null;
+            mediaRecorder.stream._audioContext = null;
+            mediaRecorder.stream._audioSources = null;
         }
         
         // Update UI
         updateRecordingUI();
         stopRecordingTimer();
         
-        console.log('Recording stopped');
+        console.log('Recording stopped and resources cleaned up');
     }
 }
 
