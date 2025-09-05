@@ -16,7 +16,10 @@ const io = socketIo(server, {
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../public')));
+// Serve HTML files from frontend/public
+app.use(express.static(path.join(__dirname, '../frontend/public')));
+// Serve CSS and JS files from frontend/src
+app.use(express.static(path.join(__dirname, '../frontend/src')));
 
 // Store meeting rooms with their codes
 const meetingRooms = new Map();

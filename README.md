@@ -36,7 +36,7 @@ git clone https://github.com/krishnabarasiya03/video-conferencing-sfu.git
 cd video-conferencing-sfu
 ```
 
-2. Install dependencies:
+2. Install backend dependencies:
 ```bash
 cd backend
 npm install
@@ -54,9 +54,27 @@ http://localhost:3000
 
 ### Development Mode
 
-To run in development mode with auto-restart:
+To run the backend in development mode with auto-restart:
 ```bash
+cd backend
 npm run dev
+```
+
+### Project Structure
+
+```
+video-conferencing-sfu/
+├── backend/          # Node.js backend server
+│   ├── server.js     # Main server file
+│   ├── package.json  # Backend dependencies
+│   └── package-lock.json
+├── frontend/         # Frontend application
+│   ├── public/       # Static HTML files
+│   ├── src/          # Source files (CSS, JS)
+│   ├── package.json  # Frontend dependencies
+│   └── README.md     # Frontend documentation
+├── README.md         # Main project documentation
+└── .gitignore
 ```
 
 ## How It Works
@@ -75,13 +93,16 @@ npm run dev
 
 ## Technical Architecture
 
-### Backend
+The application follows a clear separation between frontend and backend components:
+
+### Backend (`/backend/`)
 - **Express.js** - Web server framework
 - **Socket.IO** - Real-time bidirectional communication
 - **Meeting Management** - In-memory storage for meeting rooms and codes
 - **WebRTC Signaling** - Handles offer/answer exchange and ICE candidates
+- **Static File Serving** - Serves frontend files to browsers
 
-### Frontend
+### Frontend (`/frontend/`)
 - **Vanilla JavaScript** - No framework dependencies for simplicity
 - **WebRTC API** - Direct peer-to-peer video/audio streaming
 - **Responsive CSS** - Modern UI with mobile support
