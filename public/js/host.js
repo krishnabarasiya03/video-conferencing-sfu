@@ -9,6 +9,13 @@ let isCameraOff = false;
 let isScreenSharing = false;
 let screenStream = null;
 
+// Recording variables
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+let recordingStartTime = null;
+let recordingTimer = null;
+
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
     createMeeting();
@@ -657,3 +664,353 @@ function addVideoClickListeners() {
         });
     }
 }
+
+// Recording functionality
+async function toggleRecording() {
+    if (isRecording) {
+        stopRecording();
+    } else {
+        await startRecording();
+    }
+}
+
+async function startRecording() {
+    try {
+        // Get display media (screen capture) with audio
+        const displayStream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+                mediaSource: 'screen',
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+            },
+            audio: true
+        });
+
+        // Combine display stream with microphone audio if available
+        const audioTracks = [];
+        
+        // Add system audio from display stream
+        const displayAudioTracks = displayStream.getAudioTracks();
+        if (displayAudioTracks.length > 0) {
+            audioTracks.push(displayAudioTracks[0]);
+        }
+        
+        // Add microphone audio from local stream
+        if (localStream) {
+            const micAudioTracks = localStream.getAudioTracks();
+            if (micAudioTracks.length > 0 && !isMicMuted) {
+                audioTracks.push(micAudioTracks[0]);
+            }
+        }
+
+        // Create combined stream
+        const combinedStream = new MediaStream([
+            ...displayStream.getVideoTracks(),
+            ...audioTracks
+        ]);
+
+        // Check for MediaRecorder support
+        if (!MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
+            if (!MediaRecorder.isTypeSupported('video/webm')) {
+                throw new Error('WebM recording not supported');
+            }
+        }
+
+        // Initialize MediaRecorder
+        recordedChunks = [];
+        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
+            ? 'video/webm;codecs=vp9,opus' 
+            : 'video/webm';
+            
+        mediaRecorder = new MediaRecorder(combinedStream, { mimeType });
+
+        mediaRecorder.ondataavailable = function(event) {
+            if (event.data.size > 0) {
+                recordedChunks.push(event.data);
+            }
+        };
+
+        mediaRecorder.onstop = function() {
+            saveRecording();
+        };
+
+        mediaRecorder.onerror = function(event) {
+            console.error('MediaRecorder error:', event.error);
+            alert('Recording error occurred: ' + event.error.message);
+            stopRecording();
+        };
+
+        // Handle stream ending (e.g., user stops screen share)
+        displayStream.getVideoTracks()[0].addEventListener('ended', () => {
+            console.log('Screen share ended by user');
+            stopRecording();
+        });
+
+        // Start recording
+        mediaRecorder.start(1000); // Collect data every 1 second
+        isRecording = true;
+        recordingStartTime = Date.now();
+        
+        // Update UI
+        updateRecordingUI();
+        startRecordingTimer();
+
+        console.log('Recording started successfully');
+
+    } catch (error) {
+        console.error('Error starting recording:', error);
+        
+        if (error.name === 'NotAllowedError') {
+            alert('Screen sharing permission denied. Please allow screen sharing to record the meeting.');
+        } else if (error.name === 'NotSupportedError') {
+            alert('Screen recording is not supported in this browser. Please use Chrome, Firefox, or Edge.');
+        } else {
+            alert('Failed to start recording: ' + error.message);
+        }
+        
+        // Reset state if recording failed
+        isRecording = false;
+        updateRecordingUI();
+    }
+}
+
+function stopRecording() {
+    if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+        isRecording = false;
+        
+        // Stop all tracks
+        if (mediaRecorder.stream) {
+            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        }
+        
+        // Update UI
+        updateRecordingUI();
+        stopRecordingTimer();
+        
+        console.log('Recording stopped');
+    }
+}
+
+function updateRecordingUI() {
+    const recordBtn = document.getElementById('recordBtn');
+    const recordingStatus = document.getElementById('recordingStatus');
+    const recordIcon = recordBtn.querySelector('.record-icon');
+    const recordText = recordBtn.querySelector('.record-text');
+    
+    if (isRecording) {
+        recordBtn.classList.add('recording');
+        recordIcon.textContent = '⏹️';
+        recordText.textContent = 'Stop';
+        recordingStatus.style.display = 'flex';
+    } else {
+        recordBtn.classList.remove('recording');
+        recordIcon.textContent = '🔴';
+        recordText.textContent = 'Record';
+        recordingStatus.style.display = 'none';
+    }
+}
+
+function startRecordingTimer() {
+    recordingTimer = setInterval(() => {
+        if (recordingStartTime) {
+            const elapsed = Date.now() - recordingStartTime;
+            const minutes = Math.floor(elapsed / 60000);
+            const seconds = Math.floor((elapsed % 60000) / 1000);
+            const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            const recordingTime = document.getElementById('recordingTime');
+            if (recordingTime) {
+                recordingTime.textContent = timeStr;
+            }
+        }
+    }, 1000);
+}
+
+function stopRecordingTimer() {
+    if (recordingTimer) {
+        clearInterval(recordingTimer);
+        recordingTimer = null;
+    }
+    recordingStartTime = null;
+}
+
+function saveRecording() {
+    if (recordedChunks.length === 0) {
+        console.warn('No recorded data available');
+        return;
+    }
+
+    // Create blob from recorded chunks
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `meeting-recording-${timestamp}.webm`;
+    
+    // Save to localStorage using base64 (for smaller files)
+    // For larger files, we'd use IndexedDB, but localStorage works for demo
+    const reader = new FileReader();
+    reader.onload = function() {
+        try {
+            const base64Data = reader.result;
+            const recordings = getStoredRecordings();
+            
+            const recordingData = {
+                id: Date.now(),
+                filename: filename,
+                timestamp: new Date().toISOString(),
+                size: blob.size,
+                data: base64Data,
+                meetingCode: meetingCode
+            };
+            
+            recordings.push(recordingData);
+            
+            // Store in localStorage (with size limit check)
+            const dataString = JSON.stringify(recordings);
+            if (dataString.length > 5 * 1024 * 1024) { // 5MB limit
+                alert('Recording too large for localStorage. Download will start automatically.');
+                downloadRecording(blob, filename);
+            } else {
+                localStorage.setItem('meetingRecordings', dataString);
+                alert(`Recording saved successfully as ${filename}. Check browser storage or download from menu.`);
+            }
+            
+            // Also offer immediate download
+            downloadRecording(blob, filename);
+            
+        } catch (error) {
+            console.error('Error saving recording:', error);
+            alert('Failed to save recording to storage. Download will start automatically.');
+            downloadRecording(blob, filename);
+        }
+    };
+    
+    reader.readAsDataURL(blob);
+}
+
+function getStoredRecordings() {
+    try {
+        const stored = localStorage.getItem('meetingRecordings');
+        return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+        console.error('Error reading stored recordings:', error);
+        return [];
+    }
+}
+
+function downloadRecording(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// Clean up recording when meeting ends
+const originalEndMeeting = endMeeting;
+endMeeting = function() {
+    if (isRecording) {
+        stopRecording();
+    }
+    originalEndMeeting();
+};
+
+// Recordings management functions
+function showRecordings() {
+    const modal = document.getElementById('recordingsModal');
+    const recordingsList = document.getElementById('recordingsList');
+    
+    // Get stored recordings
+    const recordings = getStoredRecordings();
+    
+    // Clear previous content
+    recordingsList.innerHTML = '';
+    
+    if (recordings.length === 0) {
+        recordingsList.innerHTML = '<div class="no-recordings">No recordings found</div>';
+    } else {
+        recordings.forEach(recording => {
+            const recordingItem = createRecordingItem(recording);
+            recordingsList.appendChild(recordingItem);
+        });
+    }
+    
+    modal.classList.add('active');
+}
+
+function closeRecordingsModal() {
+    const modal = document.getElementById('recordingsModal');
+    modal.classList.remove('active');
+}
+
+function createRecordingItem(recording) {
+    const item = document.createElement('div');
+    item.className = 'recording-item';
+    
+    const sizeInMB = (recording.size / (1024 * 1024)).toFixed(2);
+    const date = new Date(recording.timestamp).toLocaleString();
+    
+    item.innerHTML = `
+        <div class="recording-info">
+            <div class="recording-filename">${recording.filename}</div>
+            <div class="recording-details">
+                ${date} • ${sizeInMB} MB • Meeting: ${recording.meetingCode}
+            </div>
+        </div>
+        <div class="recording-actions">
+            <button class="btn-download" onclick="downloadStoredRecording(${recording.id})">Download</button>
+            <button class="btn-delete" onclick="deleteRecording(${recording.id})">Delete</button>
+        </div>
+    `;
+    
+    return item;
+}
+
+function downloadStoredRecording(recordingId) {
+    const recordings = getStoredRecordings();
+    const recording = recordings.find(r => r.id === recordingId);
+    
+    if (recording) {
+        // Convert base64 back to blob
+        fetch(recording.data)
+            .then(res => res.blob())
+            .then(blob => {
+                downloadRecording(blob, recording.filename);
+            })
+            .catch(error => {
+                console.error('Error downloading recording:', error);
+                alert('Failed to download recording');
+            });
+    }
+}
+
+function deleteRecording(recordingId) {
+    if (confirm('Are you sure you want to delete this recording?')) {
+        const recordings = getStoredRecordings();
+        const updatedRecordings = recordings.filter(r => r.id !== recordingId);
+        
+        localStorage.setItem('meetingRecordings', JSON.stringify(updatedRecordings));
+        
+        // Refresh the modal
+        showRecordings();
+    }
+}
+
+// Close modals when clicking outside
+document.addEventListener('click', function(event) {
+    const recordingsModal = document.getElementById('recordingsModal');
+    if (event.target === recordingsModal) {
+        closeRecordingsModal();
+    }
+});
+
+// Close modals with Escape key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeRecordingsModal();
+    }
+});
