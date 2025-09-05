@@ -49,19 +49,12 @@
                 <!-- Main Content Area - Center -->
                 <div class="main-content">
                     <div class="video-container">
-                        <div class="local-video-container">
-                            <video id="localVideo" autoplay muted playsinline></video>
-                            <div class="video-label">You</div>
-                        </div>
                         <div id="remoteParticipants" class="remote-participants">
-                            <!-- Remote participants will show as name-only cards -->
+                            <!-- Host video will show here -->
                         </div>
                     </div>
                     
                     <div class="meeting-controls">
-                        <button onclick="toggleMicrophone()" class="btn btn-control" id="micBtn">🎤</button>
-                        <button onclick="toggleCamera()" class="btn btn-control" id="cameraBtn">📹</button>
-                        <button onclick="toggleScreenShare()" class="btn btn-control" id="screenShareBtn">🖥️</button>
                         <button onclick="leaveMeeting()" class="btn btn-danger">Leave Meeting</button>
                     </div>
                 </div>
