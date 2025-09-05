@@ -701,73 +701,134 @@ async function startRecording() {
             ctx.textAlign = 'center';
             ctx.fillText('Meeting Recording', canvas.width / 2, 40);
             
-            // Draw local video (host) - larger size in top-left
-            if (localVideo && localVideo.videoWidth > 0) {
-                const localWidth = 320;
-                const localHeight = 240;
-                const localX = 30;
-                const localY = 60;
+            // Draw local video (host) - adjust size based on content type
+            if (localVideo && localVideo.videoWidth > 0 && localVideo.videoHeight > 0 && localVideo.readyState >= 2) {
+                let localWidth, localHeight, localX, localY;
+                
+                // Check if screen sharing is active
+                if (isScreenSharing) {
+                    // For screen sharing, use larger area and maintain aspect ratio
+                    const maxWidth = canvas.width - 60; // Leave margins
+                    const maxHeight = canvas.height - 120; // Leave space for title and timestamp
+                    const videoAspectRatio = localVideo.videoWidth / localVideo.videoHeight;
+                    
+                    // Calculate dimensions maintaining aspect ratio
+                    if (videoAspectRatio > maxWidth / maxHeight) {
+                        // Video is wider - fit to width
+                        localWidth = maxWidth;
+                        localHeight = maxWidth / videoAspectRatio;
+                    } else {
+                        // Video is taller - fit to height
+                        localHeight = maxHeight;
+                        localWidth = maxHeight * videoAspectRatio;
+                    }
+                    
+                    // Center the video
+                    localX = (canvas.width - localWidth) / 2;
+                    localY = 60 + (maxHeight - localHeight) / 2;
+                } else {
+                    // Regular camera - smaller size in top-left
+                    localWidth = 320;
+                    localHeight = 240;
+                    localX = 30;
+                    localY = 60;
+                }
                 
                 try {
                     ctx.drawImage(localVideo, localX, localY, localWidth, localHeight);
                     
                     // Add label for local video
                     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                    ctx.fillRect(localX, localY + localHeight - 40, localWidth, 40);
+                    const labelHeight = 40;
+                    ctx.fillRect(localX, localY + localHeight - labelHeight, localWidth, labelHeight);
                     ctx.fillStyle = '#ffffff';
                     ctx.font = '16px Arial';
                     ctx.textAlign = 'center';
-                    ctx.fillText('You (Host)', localX + localWidth / 2, localY + localHeight - 15);
+                    const labelText = isScreenSharing ? 'You (Host) - Screen Share' : 'You (Host)';
+                    ctx.fillText(labelText, localX + localWidth / 2, localY + localHeight - 15);
                 } catch (e) {
                     // If video not ready, draw placeholder
                     ctx.fillStyle = '#333333';
                     ctx.fillRect(localX, localY, localWidth, localHeight);
                     ctx.fillStyle = '#ffffff';
                     ctx.textAlign = 'center';
-                    ctx.fillText('Host Video', localX + localWidth / 2, localY + localHeight / 2);
+                    const placeholderText = isScreenSharing ? 'Screen Share Loading...' : 'Host Video';
+                    ctx.fillText(placeholderText, localX + localWidth / 2, localY + localHeight / 2);
                 }
             }
             
             // Draw remote participant videos
             if (remoteParticipants) {
                 const remoteVideos = remoteParticipants.querySelectorAll('video');
-                const participantWidth = 240;
-                const participantHeight = 180;
-                const startX = 400;
-                const startY = 60;
-                const spacing = 260;
                 
-                remoteVideos.forEach((video, index) => {
-                    if (video.videoWidth > 0) {
-                        const x = startX + (index % 3) * spacing;
-                        const y = startY + Math.floor(index / 3) * (participantHeight + 60);
-                        
-                        try {
-                            ctx.drawImage(video, x, y, participantWidth, participantHeight);
-                            
-                            // Add label for participant
-                            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                            ctx.fillRect(x, y + participantHeight - 30, participantWidth, 30);
-                            ctx.fillStyle = '#ffffff';
-                            ctx.font = '14px Arial';
-                            ctx.textAlign = 'center';
-                            
-                            // Get participant name from the video container
-                            const container = video.closest('.remote-video-container');
-                            const label = container ? container.querySelector('.video-label') : null;
-                            const participantName = label ? label.textContent : `Participant ${index + 1}`;
-                            
-                            ctx.fillText(participantName, x + participantWidth / 2, y + participantHeight - 10);
-                        } catch (e) {
-                            // If video not ready, draw placeholder
-                            ctx.fillStyle = '#333333';
-                            ctx.fillRect(x, y, participantWidth, participantHeight);
-                            ctx.fillStyle = '#ffffff';
-                            ctx.textAlign = 'center';
-                            ctx.fillText(`Participant ${index + 1}`, x + participantWidth / 2, y + participantHeight / 2);
-                        }
+                if (remoteVideos.length > 0) {
+                    // Adjust layout based on screen sharing status
+                    let participantWidth, participantHeight, startX, startY, spacing, participantsPerRow;
+                    
+                    if (isScreenSharing) {
+                        // When screen sharing, show participants as smaller thumbnails on the side or bottom
+                        participantWidth = 160;
+                        participantHeight = 120;
+                        startX = canvas.width - 200; // Right side
+                        startY = 60;
+                        spacing = 140;
+                        participantsPerRow = 1; // Vertical stack on right side
+                    } else {
+                        // Regular layout when no screen sharing
+                        participantWidth = 240;
+                        participantHeight = 180;
+                        startX = 400;
+                        startY = 60;
+                        spacing = 260;
+                        participantsPerRow = 3;
                     }
-                });
+                
+                    remoteVideos.forEach((video, index) => {
+                        if (video.videoWidth > 0 && video.videoHeight > 0 && video.readyState >= 2) {
+                            let x, y;
+                            
+                            if (isScreenSharing) {
+                                // Vertical layout on the right side
+                                x = startX;
+                                y = startY + index * spacing;
+                            } else {
+                                // Grid layout
+                                x = startX + (index % participantsPerRow) * spacing;
+                                y = startY + Math.floor(index / participantsPerRow) * (participantHeight + 60);
+                            }
+                            
+                            // Make sure participant doesn't go off screen
+                            if (y + participantHeight > canvas.height - 60) {
+                                return; // Skip this participant if it would go off screen
+                            }
+                            
+                            try {
+                                ctx.drawImage(video, x, y, participantWidth, participantHeight);
+                                
+                                // Add label for participant
+                                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                                ctx.fillRect(x, y + participantHeight - 30, participantWidth, 30);
+                                ctx.fillStyle = '#ffffff';
+                                ctx.font = '14px Arial';
+                                ctx.textAlign = 'center';
+                                
+                                // Get participant name from the video container
+                                const container = video.closest('.remote-video-container');
+                                const label = container ? container.querySelector('.video-label') : null;
+                                const participantName = label ? label.textContent : `Participant ${index + 1}`;
+                                
+                                ctx.fillText(participantName, x + participantWidth / 2, y + participantHeight - 10);
+                            } catch (e) {
+                                // If video not ready, draw placeholder
+                                ctx.fillStyle = '#333333';
+                                ctx.fillRect(x, y, participantWidth, participantHeight);
+                                ctx.fillStyle = '#ffffff';
+                                ctx.textAlign = 'center';
+                                ctx.fillText(`Participant ${index + 1}`, x + participantWidth / 2, y + participantHeight / 2);
+                            }
+                        }
+                    });
+                }
             }
             
             // Add recording timestamp
