@@ -747,22 +747,23 @@ body {
 
 .video-playback-content {
     position: relative;
+    width: 1280px;
+    height: 720px;
     max-width: 90vw;
     max-height: 90vh;
-    width: auto;
-    height: auto;
     display: flex;
     flex-direction: column;
     align-items: center;
 }
 
 .video-playback-content video {
-    width: 100%;
-    height: auto;
-    max-width: 1280px;
-    max-height: 720px;
+    width: 1280px;
+    height: 720px;
+    max-width: 90vw;
+    max-height: 90vh;
     border-radius: 10px;
     background: #000;
+    object-fit: contain;
 }
 
 .video-playback-close {
